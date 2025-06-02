@@ -43,11 +43,6 @@ kernelBuilder
         ];
         return plugins;
     })
-    .AddSingleton(sp =>
-    {
-        var kernel = new Kernel(sp, sp.GetRequiredService<KernelPluginCollection>());
-        return kernel;
-    })
     ;
 
 // Build the Kernel instance.
