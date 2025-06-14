@@ -25,8 +25,8 @@ class ConversationPlugin
         {
             var messages = _conversation
                             .Where(msg => !string.IsNullOrWhiteSpace(msg.Content))
-                            .Select(msg => $"{msg.Role} > {msg.Content}\n");
-            var messagesContent = string.Join("\n------------------------------\n", messages);
+                            .Select(msg => $"# [[[ {msg.Role} ]]]\n {msg.Content}\n");
+            var messagesContent = string.Join("\n\n------------------------------------------------------------\n", messages);
 
             await File.WriteAllTextAsync(path: conversationFilePath,
                                          contents: messagesContent);
