@@ -1,49 +1,73 @@
 using System.ComponentModel;
+using System.Text.Json;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 class ConversationPlugin
 {
-    private ChatHistory _conversation = new();
+    private readonly ChatHistory _conversation = [];
 
     public ConversationPlugin(ChatHistory conversation)
     {
-        _conversation = conversation ?? new();
+        _conversation = conversation ?? [];
     }
 
     // Another way of registering functions is to use the
     // KernelFunction attribute on a public method of a class.
     [KernelFunction()]
     [Description("Saves the conversation to a file")]
-    public bool SaveConversation(string content)
+    public async Task<object> SaveConversation()
     {
-        File.WriteAllText(path: $"./{DateTime.Now:yyyyMMdd_HHmmss}_AI_SAVED_CONVERSATION.txt", contents: content);
-        return true;
-    }
-
-    [KernelFunction, Description("Counts the lines in the conversation")]
-    public object CountLinesOfConversations()
-    {
-        var messages = _conversation.Where(msg => (msg.Role == AuthorRole.System
-                                                  || msg.Role == AuthorRole.Assistant
-                                                  || msg.Role == AuthorRole.User)
-                                                  && !string.IsNullOrWhiteSpace(msg.Content))
-                                    .Select(msg => msg.Content);
-        var messagesBlock = string.Join("\n", messages);
-        Console.WriteLine($"{messagesBlock}");
-        var result = new
+        string message = "Conversation saved successfully.";
+        bool success = true;
+        string conversationFilePath = $"./{DateTime.Now:yyyyMMdd_HHmmss}_AI_CONVERSATION.md";
+        try
         {
-            messageCount = messages.Count(),
-            lines = messagesBlock.Split('\n').Where(line => !string.IsNullOrWhiteSpace(line)).Count()
-        };
+            var messages = _conversation
+                            .Where(msg => !string.IsNullOrWhiteSpace(msg.Content))
+                            .Select(msg => $"{msg.Role} > {msg.Content}\n");
+            var messagesContent = string.Join("\n------------------------------\n", messages);
 
-        Console.WriteLine($"result: messages: {result.messageCount}, lines: {result.lines}");
-        return result;
+            await File.WriteAllTextAsync(path: conversationFilePath,
+                                         contents: messagesContent);
+        }
+        catch (Exception ex)
+        {
+            message = $"Error saving conversation: {ex.Message}";
+            success = false;
+        }
+
+        return new
+        {
+            FilePath = conversationFilePath,
+            Success = success,
+            Message = message,
+            Timestamp = success ? new DateTime?(DateTime.Now) : null,
+        };
     }
 
-    [KernelFunction, Description("Exits the application. Keep in mind that they user may say bye, or good bye, or similar, then too the applicatio should exit.")]
-    public void ExitApplication()
+    [KernelFunction, Description("Counts messages in the conversation")]
+    public object CountMessagesInConversation()
     {
-        Environment.Exit(0);
+        var count = _conversation.Count;
+        var sysMessageCount = _conversation.Count(msg => msg.Role == AuthorRole.System);
+        var userMessageCount = _conversation.Count(msg => msg.Role == AuthorRole.User);
+        var assistantMessageCount = _conversation.Count(msg => msg.Role == AuthorRole.Assistant);
+        var toolMessageCount = _conversation.Count(msg => msg.Role == AuthorRole.Tool);
+
+        return new
+        {
+            TotalMessages = count,
+            SystemMessages = sysMessageCount,
+            UserMessages = userMessageCount,
+            AssistantMessages = assistantMessageCount,
+            ToolMessages = toolMessageCount
+        };
+    }
+
+    [KernelFunction, Description("Gets the current date and time")]
+    public static DateTime GetCurrentDate()
+    {
+        return DateTime.Now;
     }
 }
