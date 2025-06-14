@@ -18,28 +18,52 @@ var apiKey = Environment.GetEnvironmentVariable(envVar) ?? throw new InvalidOper
 var kernelBuilder = Kernel.CreateBuilder()
                           .AddOpenAIChatCompletion(modelId: modelId, apiKey: apiKey);
 
+// System Prompt about a helpful DB query execution assistant.
+var systemPrompt =
+"""
+You are a helpful AI assistant.
+""";
+
 // Create a list to hold the chat messages.
 var conversation = new ChatHistory();
+
+// Add the system prompt to the conversation history.
+conversation.AddSystemMessage(systemPrompt);
 
 kernelBuilder
     .Services
     .AddSingleton(conversation)
-    .AddSingleton<ConverstationPlugin>()
+    .AddSingleton<ConversationPlugin>()
     .AddSingleton(sp =>
     {
-        var kernelFunction = KernelFunctionFactory.CreateFromMethod(
+        var clearFunction = KernelFunctionFactory.CreateFromMethod(
             functionName: "ConsoleClear",
-            description: "Clears the current output in the console",
-            method: () =>
+            description: "Clears the current output in the console for the user",
+            method: ([Description("Whether the user confirmed to clear the console or not, clears the console only if confirmed.")] bool confirm) =>
             {
-                Console.Clear();
+                if (confirm)
+                {
+                    Console.Clear();
+                }
+            }
+        );
+
+        var exitFunction = KernelFunctionFactory.CreateFromMethod(
+            functionName: "ExitApplication",
+            description: "Exits the application for the user.",
+            method: ([Description("Whether the user confirmed to exit or not, exits only if confirmed.")] bool confirm) =>
+            {
+                if (confirm)
+                {
+                    Environment.Exit(0);
+                }
             }
         );
 
         KernelPluginCollection plugins =
         [
-            KernelPluginFactory.CreateFromObject(sp.GetRequiredService<ConverstationPlugin>()),
-            KernelPluginFactory.CreateFromFunctions(pluginName: "ConsolePlugin", [kernelFunction])
+            KernelPluginFactory.CreateFromObject(sp.GetRequiredService<ConversationPlugin>()),
+            KernelPluginFactory.CreateFromFunctions(pluginName: "AppPlugin", [clearFunction, exitFunction]),
         ];
         return plugins;
     })
@@ -61,14 +85,14 @@ var promptExecutionSettings = new OpenAIPromptExecutionSettings()
 };
 
 // Start a conversation loop.
-var userInpt = string.Empty;
+var userInput = string.Empty;
 do
 {
     Console.Write("You > ");
-    userInpt = Console.ReadLine() ?? string.Empty;
+    userInput = Console.ReadLine() ?? string.Empty;
 
     // Add user input to the conversation history.
-    conversation.AddUserMessage(userInpt);
+    conversation.AddUserMessage(userInput);
 
     // Call the OpenAI Chat Completion service to get a response.
     var result = await chatCompletionService.GetChatMessageContentAsync(conversation, promptExecutionSettings, kernel);
@@ -78,49 +102,3 @@ do
 
     Console.WriteLine($"AI > {result.Content}");
 } while (true);
-
-class ConverstationPlugin
-{
-    private ChatHistory _conversation = new();
-
-    public ConverstationPlugin(ChatHistory conversation)
-    {
-        _conversation = conversation ?? new();
-    }
-
-    // Another way of registering functions is to use the
-    // KernelFunction attribute on a public method of a class.
-    [KernelFunction()]
-    [Description("Saves the conversation to a file")]
-    public bool SaveConversation(string content)
-    {
-        File.WriteAllText(path: "./AI_SAVED_CONVERSATION.txt", contents: content);
-        return true;
-    }
-
-    [KernelFunction, Description("Counts the lines in the conversation")]
-    public object CountLinesOfConversations()
-    {
-        var messages = _conversation.Where(msg => (msg.Role == AuthorRole.System
-                                                  || msg.Role == AuthorRole.Assistant
-                                                  || msg.Role == AuthorRole.User)
-                                                  && !string.IsNullOrWhiteSpace(msg.Content))
-                                    .Select(msg => msg.Content);
-        var messagesBlock = string.Join("\n", messages);
-        Console.WriteLine($"{messagesBlock}");
-        var result = new
-        {
-            messageCount = messages.Count(),
-            lines = messagesBlock.Split('\n').Where(line => !string.IsNullOrWhiteSpace(line)).Count()
-        };
-
-        Console.WriteLine($"result: messages: {result.messageCount}, lines: {result.lines}");
-        return result;
-    }
-
-    [KernelFunction, Description("Exits the application. Keep in mind that they user may say bye, or good bye, or similar, then too the applicatio should exit.")]
-    public void ExitApplication()
-    {
-        Environment.Exit(0);
-    }
-}
